@@ -64,6 +64,7 @@ async def registration_faculty(callback: CallbackQuery, state: FSMContext):
         text=f"Выберите вашу группу факультета {faculty_name}:",
         reply_markup=groups_kb
     )
+    await callback.answer()
     await state.set_state(RegistrationStates.choice_group)
 
 
@@ -128,5 +129,6 @@ async def registration_group(callback: CallbackQuery, state: FSMContext):
     except Exception as e:
         logger.error(f"Ошибка при регистрации пользователя: {e}")
         await callback.message.edit_text("❌ Ошибка при регистрации. Попробуйте позже.")
+        await callback.answer()
     finally:
         await state.clear()
