@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from aiogram.exceptions import TelegramUnauthorizedError, TelegramNetworkError
+from aiogram.exceptions import TelegramUnauthorizedError, TelegramNetworkError, TelegramRetryAfter
 from app.bot.bot import dp, bot
 
 logger = logging.getLogger(__name__)
@@ -16,6 +16,10 @@ async def safe_polling():
             logger.critical("❌ Ошибка авторизации Telegram — неверный токен.")
             print("❌ Telegram отклонил токен. Проверьте TELEGRAM_BOT_TOKEN.")
             break
+        except TelegramRetryAfter as e:
+            wait_time = e.retry_after + 2
+            logger.warning(f"⚠️ Flood control GetUpdates. Ожидание {wait_time} секунд...")
+            await asyncio.sleep(wait_time)
         except TelegramNetworkError:
             logger.error(f"⚠️ Ошибка сети при обращении к Telegram API. Перезапуск через 5 секунд...")
             await asyncio.sleep(5)
