@@ -206,15 +206,14 @@ async def sync_faculty_selected(callback: CallbackQuery, state: FSMContext):
     try:
         await set_sync_running()
         await callback.message.edit_text(f"⏳ Синхронизация факультета {faculty_name}...")
+        await callback.answer()
 
         await run_full_sync_for_faculty(faculty_name)
 
         await callback.message.edit_text(f"✅ Синхронизация завершена для факультета {faculty_name}.")
-        await callback.answer()
         logger.info(f"✅ Синхронизация завершена для факультета {faculty_name}.")
     except Exception as e:
         await callback.message.edit_text(text=f"❌ Ошибка при синхронизации факультета.")
-        await callback.answer()
         logger.error(f"❌ Ошибка при синхронизации факультета {faculty_name}: {e}")
     finally:
         set_sync_finished()
