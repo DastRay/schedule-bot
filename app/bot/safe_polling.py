@@ -10,7 +10,11 @@ async def safe_polling():
 
     while True:
         try:
-            await dp.start_polling(bot, skip_updates=True)
+            await dp.start_polling(
+                bot,
+                skip_updates=True,
+                timeout=15
+            )
             break
         except TelegramUnauthorizedError:
             logger.critical("❌ Ошибка авторизации Telegram — неверный токен.")
