@@ -3,6 +3,7 @@
 
 Ошибки при формировании расписания фиксируются через logging.
 """
+import asyncio
 import logging
 import datetime
 
@@ -149,6 +150,7 @@ async def get_schedule_today(message: Message):
 
             for text in text_blocks:
                 await message.answer(text, parse_mode="MarkdownV2", disable_web_page_preview=True)
+                await asyncio.sleep(1.1)
 
     except Exception as e:
         logger.error(f"⚠️ Ошибка при выводе расписания на сегодня для группы {group.group_name}: {e}")
@@ -207,6 +209,7 @@ async def weekly_schedule(callback: CallbackQuery):
 
             await callback.message.edit_text(messages[0], parse_mode="MarkdownV2", disable_web_page_preview=True)
             for msg in messages[1:]:
+                await asyncio.sleep(1.1)
                 await callback.message.answer(msg, parse_mode="MarkdownV2", disable_web_page_preview=True)
 
             await callback.answer()
@@ -267,10 +270,10 @@ async def next_week_schedule(callback: CallbackQuery):
             )
 
             await callback.message.edit_text(messages[0], parse_mode="MarkdownV2", disable_web_page_preview=True)
-            for msg in messages[1:]:
-                await callback.message.answer(msg, parse_mode="MarkdownV2", disable_web_page_preview=True)
-
             await callback.answer()
+            for msg in messages[1:]:
+                await asyncio.sleep(1.1)
+                await callback.message.answer(msg, parse_mode="MarkdownV2", disable_web_page_preview=True)
 
     except Exception as e:
         logger.error(f"⚠️ Ошибка при обработке next_week_schedule: {e}")
@@ -379,10 +382,10 @@ async def show_schedule(callback: CallbackQuery, state: FSMContext):
             return
 
         await callback.message.edit_text(messages[0], parse_mode="MarkdownV2", disable_web_page_preview=True)
-        for msg in messages[1:]:
-            await callback.message.answer(msg.strip(), parse_mode="MarkdownV2", disable_web_page_preview=True)
-
         await callback.answer()
+        for msg in messages[1:]:
+            await asyncio.sleep(1.1)
+            await callback.message.answer(msg.strip(), parse_mode="MarkdownV2", disable_web_page_preview=True)
 
     except Exception as e:
         logger.error(f"⚠️ Ошибка при выводе расписания для {group_name}: {e}")

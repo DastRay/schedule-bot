@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import datetime
 
@@ -100,6 +101,7 @@ async def format_and_send_schedule(target, professor_name: str, professor, filte
             parse_mode="MarkdownV2",
             disable_web_page_preview=True
         )
+        await asyncio.sleep(1.1)
 
 
 async def send_no_lessons_message(target, professor_name: str, professor=None, reply_markup=None):
@@ -429,6 +431,7 @@ async def handle_professor_today(callback: CallbackQuery):
             await callback.answer(f"Сегодня нет пар у {professor.name}")
             return
 
+        await callback.answer(f"📅 Сегодня {week_mark.WEEK_MARK_STICKER}")
         await format_and_send_schedule(
             target=callback.message,
             professor_name=professor_name,
@@ -437,8 +440,6 @@ async def handle_professor_today(callback: CallbackQuery):
             week_filter=week_filter,
             reply_markup=schedule_type_kb
         )
-
-        await callback.answer(f"📅 Сегодня {week_mark.WEEK_MARK_STICKER}")
 
     except Exception as e:
         logger.error(f"Ошибка при показе расписания на сегодня преподавателя {professor_name}: {e}")
@@ -517,6 +518,7 @@ async def handle_professor_week(callback: CallbackQuery):
             if len_messages > 1:
                 logger.warning(f"Расписание преподавателя {professor_name} не уместилось в одно сообщение. Проверить!!!")
 
+            await callback.answer(week_names.get(week_type, "🗓 Неделя"))
             for i, msg_text in enumerate(messages):
                 is_last = (i == len_messages - 1)
                 await callback.message.answer(
@@ -525,8 +527,7 @@ async def handle_professor_week(callback: CallbackQuery):
                     parse_mode="MarkdownV2",
                     disable_web_page_preview=True
                 )
-
-            await callback.answer(week_names.get(week_type, "🗓 Неделя"))
+                await asyncio.sleep(1.1)
         else:
             await callback.message.answer("❌ Не удалось сформировать расписание.")
             await callback.answer()
