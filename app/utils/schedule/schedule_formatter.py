@@ -69,9 +69,9 @@ def _filter_lessons_by_week(lessons, week: str):
     """
 
     if week == "plus":
-        return [l for l in lessons if l.week_mark in ("plus", "every", None)]
+        return [l for l in lessons if l.week_mark in ("plus", "every", "none", None)]
     elif week == "minus":
-        return [l for l in lessons if l.week_mark in ("minus", "every", None)]
+        return [l for l in lessons if l.week_mark in ("minus", "every", "none", None)]
     else:
         return lessons[:]  # "full" — без фильтра
 
@@ -174,6 +174,7 @@ def _format_common_lesson_data(l):
     subject = escape_md_v2(l.subject or "Предмет не указан")
 
     marker = {"plus": "➕", "minus": "➖", "every": ""}.get(l.week_mark or "every", "")
+
 
     return marker, lesson_num, subject, room, time_str
 
