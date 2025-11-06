@@ -194,6 +194,7 @@ async def weekly_schedule(callback: CallbackQuery):
                 .where(Lesson.group_id == user.group_id)
                 .order_by(Lesson.weekday, Lesson.lesson_number)
             )
+
             lessons = lessons_query.scalars().all()
 
             if not lessons:
@@ -216,7 +217,7 @@ async def weekly_schedule(callback: CallbackQuery):
 
     except Exception as e:
         logger.error(f"⚠️ Ошибка при обработке weekly_schedule: {e}")
-        await callback.message.answer("⚠️ Произошла ошибка при получении расписания.")
+        await callback.message.edit_text(text="⚠️ Произошла ошибка при получении расписания.")
         await callback.answer()
 
 
@@ -277,7 +278,7 @@ async def next_week_schedule(callback: CallbackQuery):
 
     except Exception as e:
         logger.error(f"⚠️ Ошибка при обработке next_week_schedule: {e}")
-        await callback.message.answer("⚠️ Произошла ошибка при получении расписания.")
+        await callback.message.edit_text("⚠️ Произошла ошибка при получении расписания.")
         await callback.answer()
 
 
