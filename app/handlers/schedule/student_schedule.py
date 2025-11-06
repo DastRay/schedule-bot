@@ -135,7 +135,7 @@ async def get_schedule_today(message: Message):
 
             lessons_today = [
                 l for l in lessons
-                if l.week_mark in ("every", current_week_mark)
+                if l.week_mark in ("every", "none", current_week_mark)
             ]
 
             if not lessons_today:

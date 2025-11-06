@@ -173,7 +173,7 @@ def _format_common_lesson_data(l):
 
     subject = escape_md_v2(l.subject or "Предмет не указан")
 
-    marker = {"plus": "➕", "minus": "➖", "every": ""}.get(l.week_mark or "every", "")
+    marker = {"plus": "➕", "minus": "➖", "every": "", "none": ""}.get(l.week_mark or "every", "")
 
 
     return marker, lesson_num, subject, room, time_str

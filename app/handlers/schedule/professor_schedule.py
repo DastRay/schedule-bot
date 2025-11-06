@@ -52,7 +52,7 @@ async def get_professor_schedule_for_today(professor_name: str):
 
     filtered_lessons = [
         lesson for lesson in today_lessons
-        if lesson.week_mark in (week_filter, "every", None)
+        if lesson.week_mark in (week_filter, "every", "none", None)
     ]
 
     return professor, all_lessons, filtered_lessons, week_filter
