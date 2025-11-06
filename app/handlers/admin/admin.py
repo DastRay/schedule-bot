@@ -5,7 +5,7 @@ from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, BufferedInputFile
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from sqlalchemy import update, select
+from sqlalchemy import update, select, func
 
 from app.database.models import User
 from app.filters.is_admin import IsAdminFilter
@@ -387,3 +387,32 @@ async def send_buffered_logs(callback: CallbackQuery):
         document=input_file,
         caption=f"Последние {global_buffer_handler.capacity} логов",
     )
+
+@router.callback_query(F.data == "get_users", IsAdminFilter())
+async def get_users(callback: CallbackQuery):
+    """
+    Обработчик кнопки "Пользователи".
+    Выводит общее количество зарегистрированных пользователей.
+    """
+
+    try:
+        async with AsyncSessionLocal() as session:
+            total_users_query = await session.execute(
+                select(func.count(User.id))
+            )
+            total_users = total_users_query.scalar_one()
+
+            message = f"👥 *Общее количество зарегистрированных пользователей:* {total_users}"
+
+            await callback.message.edit_text(
+                message,
+                parse_mode="MarkdownV2",
+            )
+            await callback.answer()
+
+    except Exception as e:
+        logger.error(f"⚠️ Ошибка при получении количества пользователей: {e}")
+        await callback.message.edit_text(
+            "⚠️ Произошла ошибка при получении количества пользователей."
+        )
+        await callback.answer()

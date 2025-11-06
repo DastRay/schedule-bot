@@ -12,6 +12,9 @@ def get_admin_kb():
                 InlineKeyboardButton(text="Список администраторов", callback_data="list_of_admins")
             ],
             [
+                InlineKeyboardButton(text="Пользователи", callback_data="get_users"),
+            ],
+            [
                 InlineKeyboardButton(text="Синхронизировать расписание", callback_data="sync_schedule")
             ],
             [
