@@ -3,6 +3,7 @@ import logging
 from datetime import datetime
 
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
@@ -421,8 +422,13 @@ async def handle_professor_today(callback: CallbackQuery):
 
         try:
             await callback.message.delete()
+        except TelegramBadRequest as e:
+            if "message can't be deleted" in str(e):
+                logger.debug(f"⚠️ Не удалось удалить сообщение {callback.message.message_id}: слишком старое (старше 48 часов)")
+            else:
+                logger.debug(f"⚠️ Не удалось удалить сообщение {callback.message.message_id}: {e}")
         except Exception as delete_error:
-            logger.debug(f"Не удалось удалить сообщение: {delete_error}")
+            logger.debug(f"⚠️ Не удалось удалить сообщение {callback.message.message_id}: {delete_error}")
 
         schedule_type_kb = get_schedule_professors_kb(professor_name)
 
@@ -511,7 +517,15 @@ async def handle_professor_week(callback: CallbackQuery):
             header_prefix=header_prefix
         )
 
-        await callback.message.delete()
+        try:
+            await callback.message.delete()
+        except TelegramBadRequest as e:
+            if "message can't be deleted for everyone" in str(e):
+                logger.debug(f"⚠️ Не удалось удалить сообщение {callback.message.message_id}: слишком старое (старше 48 часов)")
+            else:
+                logger.debug(f"⚠️ Не удалось удалить сообщение {callback.message.message_id}: {e}")
+        except Exception as e:
+            logger.debug(f"⚠️ Не удалось удалить сообщение {callback.message.message_id}: {e}")
 
         if messages:
             len_messages = len(messages)
