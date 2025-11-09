@@ -88,12 +88,6 @@ async def format_and_send_schedule(target, professor_name: str, professor, filte
         return
 
     len_messages = len(messages)
-    if len_messages > 1:
-        try:
-            await send_chat_info_log(f"Расписание преподавателя {professor_name} не уместилось в одно сообщение. Проверить!!!")
-        except Exception as e:
-            logger.warning(f"⚠️ Не удалось отправить сообщение в Telegram: {e}")
-
     for i, msg_text in enumerate(messages):
         is_last = (i == len_messages - 1)
         await target.answer(
@@ -529,9 +523,6 @@ async def handle_professor_week(callback: CallbackQuery):
 
         if messages:
             len_messages = len(messages)
-            if len_messages > 1:
-                logger.warning(f"Расписание преподавателя {professor_name} не уместилось в одно сообщение. Проверить!!!")
-
             await callback.answer(week_names.get(week_type, "🗓 Неделя"))
             for i, msg_text in enumerate(messages):
                 is_last = (i == len_messages - 1)
