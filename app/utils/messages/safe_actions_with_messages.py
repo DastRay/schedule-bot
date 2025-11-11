@@ -154,13 +154,12 @@ async def safe_try_delete(target, *args, **kwargs) -> bool:
     """
 
     try:
-        # Message
         if isinstance(target, Message):
             return await safe_delete_message(target)
-        # CallbackQuery
+
         elif isinstance(target, CallbackQuery):
             return await safe_delete_callback_message(target)
-        # Bot + chat_id + message_id
+
         elif isinstance(target, Bot) and len(args) >= 2:
             chat_id, message_id = args[:2]
             return await safe_delete_message_by_id(target, chat_id, message_id)
@@ -171,3 +170,45 @@ async def safe_try_delete(target, *args, **kwargs) -> bool:
     except Exception as e:
         logger.error(f"❌ Ошибка в safe_try_delete: {e}")
         return False
+
+
+async def safe_edit_message(callback: CallbackQuery, text: str, **kwargs):
+    """
+    Безопасное редактирование сообщения Telegram с обработкой ошибки идентичности содержимого.
+
+    Обрабатывает случай, когда попытка редактирования сообщения приводит к ошибке
+    "message is not modified", возникающей когда новое содержимое сообщения идентично текущему.
+
+    Параметры:
+        callback : CallbackQuery
+            Объект callback запроса содержащий сообщение для редактирования
+        text : str
+            Новый текст сообщения
+        **kwargs : dict
+            Дополнительные параметры для метода callback.message.edit_text():
+            - parse_mode : str, optional
+                Режим парсинга текста
+            - disable_web_page_preview : bool, optional
+                Отключение предпросмотра веб-страниц
+            - reply_markup : InlineKeyboardMarkup, optional
+                Клавиатура для прикрепления к сообщению
+            - И другие параметры, поддерживаемые методом edit_text()
+
+    Возвращает:
+        bool
+            - True: сообщение успешно отредактировано или не требует изменений
+            - False: никогда не возвращается (в случае ошибки выбрасывается исключение)
+    """
+
+    if not callback.message:
+        raise ValueError("CallbackQuery не содержит сообщения для редактирования")
+
+    try:
+        await callback.message.edit_text(text, **kwargs)
+        return True
+    except Exception as e:
+        if "message is not modified" in str(e):
+            logger.debug(f"Не удалось изменить сообщение: {e} ")
+            return True
+        else:
+            raise e
