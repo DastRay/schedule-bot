@@ -1,8 +1,3 @@
-"""
-Реализует обработчики для просмотра расписания студентами.
-
-Ошибки при формировании расписания фиксируются через logging.
-"""
 import asyncio
 import logging
 import datetime
@@ -14,7 +9,12 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery
 
 import app.utils.week_mark.week_mark as week_mark
-from app.utils.messages.safe_delete_messages import safe_delete_callback_message, safe_delete_message
+from app.utils.custom_logging.setup_log import log_error_with_context
+from app.utils.messages.safe_actions_with_messages import (
+    safe_delete_callback_message,
+    safe_delete_message,
+    safe_edit_message
+)
 from app.utils.schedule.sync_lock import is_sync_running
 from app.utils.schedule.worker import get_schedule_for_group
 from app.keyboards.base_kb import abbr_faculty
@@ -44,12 +44,17 @@ async def cancel_find(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     try:
         await callback.answer()
-        await callback.message.edit_text(
+        await safe_edit_message(
+            callback,
             text="Выберите расписание которое хотите посмотреть:",
             reply_markup=get_other_schedules_kb()
         )
     except Exception as e:
-        logger.error(f"Не удалось изменить сообщение: {e}")
+        log_error_with_context(
+            error=e,
+            handler_name="cancel_find",
+            additional_context=f"callback_data={callback.data}"
+        )
 
 
 @router.callback_query(F.data=="exit_other_schedules")
@@ -58,21 +63,8 @@ async def exit_other_schedules(callback: CallbackQuery):
     await safe_delete_callback_message(callback)
 
 
-@router.message((F.text == "Другое расписание") | (F.text == "Расписания"))
-async def other_schedules(message: Message):
-    """Просмотр 'другого' расписания"""
-    if is_sync_running():
-        await message.answer(
-            "⏳ Просмотр расписания временно недоступен — идёт обновление данных. Пожалуйста, попробуйте позже."
-        )
-        return
-
-    await safe_delete_message(message)
-    await message.answer(text="Выберите расписание которое хотите посмотреть:", reply_markup=get_other_schedules_kb())
-
-
 @router.callback_query(F.data=="other_schedule")
-async def get_schedule_start(callback: CallbackQuery, state: FSMContext):
+async def get_other_schedule_start(callback: CallbackQuery, state: FSMContext):
     """
     Начало сценария просмотра 'другого' расписания.
 
@@ -82,15 +74,20 @@ async def get_schedule_start(callback: CallbackQuery, state: FSMContext):
     """
 
     if is_sync_running():
-        await callback.message.edit_text(
-            "⏳ Просмотр расписания временно недоступен — идёт обновление данных. Пожалуйста, попробуйте позже."
+        await safe_edit_message(
+            callback,
+            text="⏳ Просмотр расписания временно недоступен — идёт обновление данных. Пожалуйста, попробуйте позже."
         )
         await callback.answer()
         return
 
-    await callback.message.edit_text(text="Выберите факультет:", reply_markup=find_kb.faculty_keyboard_find)
-    await state.set_state(ShowScheduleStates.choice_faculty)
+    await safe_edit_message(
+        callback,
+        text="Выберите факультет:",
+        reply_markup=find_kb.faculty_keyboard_find
+    )
     await callback.answer()
+    await state.set_state(ShowScheduleStates.choice_faculty)
 
 
 @router.message(F.text == "Расписание на сегодня")
@@ -110,8 +107,9 @@ async def get_schedule_today(message: Message):
 
     user_id = message.from_user.id
     today = datetime.date.today()
-    weekday = today.isoweekday()  # Понедельник=1, ..., Воскресенье=7
+    weekday = today.isoweekday()
     current_week_mark =  week_mark.WEEK_MARK_TXT
+    user = None
 
     try:
         async with AsyncSessionLocal() as session:
@@ -153,8 +151,14 @@ async def get_schedule_today(message: Message):
                 await asyncio.sleep(1.1)
 
     except Exception as e:
-        logger.error(f"⚠️ Ошибка при выводе расписания на сегодня для группы {group.group_name}: {e}")
-        await message.answer("⚠️ Ошибка при получении расписания.")
+        log_error_with_context(
+            error=e,
+            handler_name="get_schedule_today",
+            user=user,
+            additional_context=f"дата={today}, день_недели={weekday}, неделя={current_week_mark}"
+        )
+
+        await message.answer("Ошибка при получении расписания.")
 
 
 @router.callback_query(F.data == "weekly_schedule")
@@ -169,13 +173,15 @@ async def weekly_schedule(callback: CallbackQuery):
     """
 
     if is_sync_running():
-        await callback.message.edit_text(
-            "⏳ Просмотр расписания временно недоступен — идёт обновление данных. Пожалуйста, попробуйте позже."
+        await safe_edit_message(
+            callback,
+            text="⏳ Просмотр расписания временно недоступен — идёт обновление данных. Пожалуйста, попробуйте позже."
         )
         await callback.answer()
         return
 
     user_id = callback.from_user.id
+    user = None
     try:
         async with AsyncSessionLocal() as session:
 
@@ -184,7 +190,7 @@ async def weekly_schedule(callback: CallbackQuery):
             )
             user = result.scalar_one_or_none()
             if not user:
-                await callback.message.edit_text("❌ Вы ещё не зарегистрированы.")
+                await safe_edit_message(callback,text="❌ Вы ещё не зарегистрированы.")
                 await callback.answer()
                 return
 
@@ -198,7 +204,7 @@ async def weekly_schedule(callback: CallbackQuery):
             lessons = lessons_query.scalars().all()
 
             if not lessons:
-                await callback.message.edit_text("📭 Расписание для вашей группы отсутствует.")
+                await safe_edit_message(callback,text="📭 Расписание для вашей группы отсутствует.")
                 await callback.answer()
                 return
 
@@ -208,16 +214,26 @@ async def weekly_schedule(callback: CallbackQuery):
                 header_prefix=f"📅 Расписание группы {user.group.group_name} на текущую неделю"
             )
 
-            await callback.message.edit_text(messages[0], parse_mode="MarkdownV2", disable_web_page_preview=True)
+            await safe_edit_message(
+                callback,
+                messages[0],
+                parse_mode="MarkdownV2",
+                disable_web_page_preview=True
+            )
+            await callback.answer()
             for msg in messages[1:]:
                 await asyncio.sleep(1.1)
                 await callback.message.answer(msg, parse_mode="MarkdownV2", disable_web_page_preview=True)
 
-            await callback.answer()
-
     except Exception as e:
-        logger.error(f"⚠️ Ошибка при обработке weekly_schedule: {e}")
-        await callback.message.edit_text(text="⚠️ Произошла ошибка при получении расписания.")
+        log_error_with_context(
+            error=e,
+            handler_name="weekly_schedule",
+            user=user,
+            additional_context=f"неделя={week_mark.WEEK_MARK_TXT}"
+        )
+
+        await safe_edit_message(callback, text="Ошибка при получении расписания")
         await callback.answer()
 
 
@@ -233,13 +249,16 @@ async def next_week_schedule(callback: CallbackQuery):
     """
 
     if is_sync_running():
-        await callback.message.edit_text(
-            "⏳ Просмотр расписания временно недоступен — идёт обновление данных. Пожалуйста, попробуйте позже."
+        await safe_edit_message(
+            callback,
+            text="⏳ Просмотр расписания временно недоступен — идёт обновление данных. Пожалуйста, попробуйте позже."
         )
         await callback.answer()
         return
 
     user_id = callback.from_user.id
+    user = None
+
     try:
         async with AsyncSessionLocal() as session:
 
@@ -248,7 +267,7 @@ async def next_week_schedule(callback: CallbackQuery):
             )
             user = result.scalar_one_or_none()
             if not user:
-                await callback.message.edit_text("❌ Вы ещё не зарегистрированы.")
+                await safe_edit_message(callback, text="❌ Вы ещё не зарегистрированы.")
                 await callback.answer()
                 return
 
@@ -261,7 +280,7 @@ async def next_week_schedule(callback: CallbackQuery):
             lessons = lessons_query.scalars().all()
 
             if not lessons:
-                await callback.message.answer("📭 Расписание для вашей группы отсутствует.")
+                await safe_edit_message(callback, text="📭 Расписание для вашей группы отсутствует.")
                 return
 
             messages = format_schedule_students(
@@ -270,16 +289,39 @@ async def next_week_schedule(callback: CallbackQuery):
                 header_prefix=f"📅 Расписание группы {user.group.group_name} на следующую неделю"
             )
 
-            await callback.message.edit_text(messages[0], parse_mode="MarkdownV2", disable_web_page_preview=True)
+            await safe_edit_message(
+                callback,
+                text=messages[0],
+                parse_mode="MarkdownV2",
+                disable_web_page_preview=True
+            )
             await callback.answer()
             for msg in messages[1:]:
                 await asyncio.sleep(1.1)
                 await callback.message.answer(msg, parse_mode="MarkdownV2", disable_web_page_preview=True)
 
     except Exception as e:
-        logger.error(f"⚠️ Ошибка при обработке next_week_schedule: {e}")
-        await callback.message.edit_text("⚠️ Произошла ошибка при получении расписания.")
+        log_error_with_context(
+            error=e,
+            handler_name="next_week_schedule",
+            user=user,
+            additional_context=f"текущая_неделя={week_mark.WEEK_MARK_TXT}, следующая_неделя={next_week}"
+        )
+        await safe_edit_message(callback,text="Ошибка при получении расписания.")
         await callback.answer()
+
+
+@router.message((F.text == "Другое расписание") | (F.text == "Расписания"))
+async def other_schedules(message: Message):
+    """Просмотр 'другого' расписания"""
+    if is_sync_running():
+        await message.answer(
+            "⏳ Просмотр расписания временно недоступен — идёт обновление данных. Пожалуйста, попробуйте позже."
+        )
+        return
+
+    await safe_delete_message(message)
+    await message.answer(text="Выберите расписание которое хотите посмотреть:", reply_markup=get_other_schedules_kb())
 
 
 @router.callback_query(StateFilter(ShowScheduleStates.choice_faculty), F.data.startswith("faculty:"))
@@ -294,21 +336,34 @@ async def get_schedule_faculty(callback: CallbackQuery, state: FSMContext):
     """
 
     if is_sync_running():
-        await callback.message.edit_text(
-            "⏳ Просмотр расписания временно недоступен — идёт обновление данных. Пожалуйста, попробуйте позже."
+        await safe_edit_message(
+            callback,
+            text="⏳ Просмотр расписания временно недоступен — идёт обновление данных. Пожалуйста, попробуйте позже."
         )
         await callback.answer()
         await state.clear()
         return
 
-    faculty_name = abbr_faculty[callback.data.split(":")[1]]
-    groups_kb = find_kb.groups_keyboards_find.get(faculty_name)
-    if not groups_kb:
-        await callback.message.edit_text("⚠️ Для этого факультета нет групп.")
-        return
-    await callback.message.edit_text(text=f"Выберите группу факультета {faculty_name}:", reply_markup=groups_kb)
-    await callback.answer()
-    await state.set_state(ShowScheduleStates.choice_group)
+    try:
+        faculty_name = abbr_faculty[callback.data.split(":")[1]]
+        groups_kb = find_kb.groups_keyboards_find.get(faculty_name)
+        if not groups_kb:
+            await safe_edit_message(callback, text="⚠️ Для этого факультета нет групп.")
+            return
+
+        await safe_edit_message(
+            callback,
+            text=f"Выберите группу факультета {faculty_name}:",
+            reply_markup=groups_kb
+        )
+        await callback.answer()
+        await state.set_state(ShowScheduleStates.choice_group)
+    except Exception as e:
+        log_error_with_context(
+            error=e,
+            handler_name="get_schedule_faculty",
+            additional_context=f"callback_data={callback.data}, состояние=choice_faculty"
+        )
 
 
 @router.callback_query(StateFilter(ShowScheduleStates.choice_group), F.data.startswith("group:"))
@@ -322,22 +377,32 @@ async def choice_type_week(callback: CallbackQuery, state: FSMContext):
     """
 
     if is_sync_running():
-        await callback.message.edit_text(
-            "⏳ Просмотр расписания временно недоступен — идёт обновление данных. Пожалуйста, попробуйте позже."
+        await safe_edit_message(
+            callback,
+            text="⏳ Просмотр расписания временно недоступен — идёт обновление данных. Пожалуйста, попробуйте позже."
         )
         await callback.answer()
         await state.clear()
         return
 
-    group_name = callback.data.split(":")[1]
-    await state.update_data(group_name=group_name)
-    await state.set_state(ShowScheduleStates.choice_week)
 
-    await callback.message.edit_text(
-        text=f"Выберите тип расписания:\nСейчас неделя {week_mark.WEEK_MARK_STICKER}",
-        reply_markup=get_choice_week_type_kb()
-    )
-    await callback.answer()
+    try:
+        group_name = callback.data.split(":")[1]
+        await state.update_data(group_name=group_name)
+        await state.set_state(ShowScheduleStates.choice_week)
+
+        await safe_edit_message(
+            callback,
+            text=f"Выберите тип расписания:\nСейчас неделя {week_mark.WEEK_MARK_STICKER}",
+            reply_markup=get_choice_week_type_kb()
+        )
+        await callback.answer()
+    except Exception as e:
+        log_error_with_context(
+            error=e,
+            handler_name="choice_type_week",
+            additional_context=f"callback_data={callback.data}, группа={callback.data.split(':')[1]}, состояние=choice_group"
+        )
 
 
 @router.callback_query(StateFilter(ShowScheduleStates.choice_week), F.data.startswith("week:"))
@@ -348,13 +413,13 @@ async def show_schedule(callback: CallbackQuery, state: FSMContext):
     """
 
     if is_sync_running():
-        await callback.message.edit_text(
-            "⏳ Просмотр расписания временно недоступен — идёт обновление данных. Пожалуйста, попробуйте позже."
+        await safe_edit_message(
+            callback,
+            text="⏳ Просмотр расписания временно недоступен — идёт обновление данных. Пожалуйста, попробуйте позже."
         )
         await callback.answer()
         await state.clear()
         return
-
 
     state_data = await state.get_data()
     group_name = state_data.get("group_name")
@@ -363,7 +428,7 @@ async def show_schedule(callback: CallbackQuery, state: FSMContext):
     try:
         lessons = await get_schedule_for_group(group_name)
         if not lessons:
-            await callback.message.edit_text(f"Расписание для {group_name} пустое.")
+            await safe_edit_message(callback, text=f"Расписание для {group_name} пустое.")
             return
 
         if week == "full":
@@ -377,21 +442,34 @@ async def show_schedule(callback: CallbackQuery, state: FSMContext):
         )
 
         if not messages:
-            await callback.message.edit_text(
-                f"На выбранную неделю ({week_mark.WEEK_MARK_STICKER}) расписание для {group_name} пустое."
+            await safe_edit_message(
+                callback,
+                text=f"На выбранную неделю ({week_mark.WEEK_MARK_STICKER}) расписание для {group_name} пустое."
             )
             return
 
-        await callback.message.edit_text(messages[0], parse_mode="MarkdownV2", disable_web_page_preview=True)
+        await safe_edit_message(
+            callback,
+            messages[0],
+            parse_mode="MarkdownV2",
+            disable_web_page_preview=True
+        )
         await callback.answer()
+
         for msg in messages[1:]:
             await asyncio.sleep(1.1)
             await callback.message.answer(msg.strip(), parse_mode="MarkdownV2", disable_web_page_preview=True)
 
     except Exception as e:
-        logger.error(f"⚠️ Ошибка при выводе расписания для {group_name}: {e}")
-        await callback.message.edit_text(
-            text=f"⚠️ Произошла ошибка при выводе расписания для *{escape_md_v2(group_name)}*.",
+        log_error_with_context(
+            error=e,
+            handler_name="show_schedule",
+            additional_context=f"группа={group_name}, неделя={week}, состояние=choice_week"
+        )
+
+        await safe_edit_message(
+            callback,
+            text=f"Ошибка при выводе расписания для *{escape_md_v2(group_name)}*\\.",
             parse_mode="MarkdownV2"
         )
         await callback.answer()

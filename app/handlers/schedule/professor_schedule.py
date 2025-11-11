@@ -3,7 +3,6 @@ import logging
 from datetime import datetime
 
 from aiogram import F, Router
-from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
@@ -11,8 +10,12 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKe
 from app.database.models import Professor
 from app.keyboards.schedule_kb import get_other_schedules_kb
 from app.state.states import ProfessorScheduleStates
-from app.utils.custom_logging.TelegramLogHandler import send_chat_info_log
-from app.utils.messages.safe_delete_messages import safe_delete_callback_message, safe_delete_message
+from app.utils.custom_logging.setup_log import log_error_with_context
+from app.utils.messages.safe_actions_with_messages import (
+    safe_delete_callback_message,
+    safe_delete_message,
+    safe_edit_message
+)
 from app.utils.schedule.schedule_formatter import format_schedule_professor, escape_md_v2
 from app.utils.schedule.search_professors import search_professors_fuzzy
 from app.utils.schedule.sync_lock import is_sync_running
@@ -80,7 +83,7 @@ async def format_and_send_schedule(target, professor_name: str, professor, filte
         Exception: Если возникла ошибка при отправке сообщений пользователю.
     """
 
-    header_prefix = f"👨‍🏫 Расписание преподавателя {professor.name} на сегодня"
+    header_prefix = f"👨‍🏫 Расписание преподавателя {escape_md_v2(professor.name)} на сегодня"
     messages = format_schedule_professor(filtered_lessons, week=week_filter, header_prefix=header_prefix)
 
     if not messages:
@@ -182,7 +185,12 @@ async def show_professor_schedule_menu(message: Message, professor_name: str, st
         await send_no_lessons_message(message, professor_name, professor, schedule_type_kb)
 
     except Exception as e:
-        logger.error(f"Ошибка при получении расписания на сегодня для {professor_name}: {e}")
+        log_error_with_context(
+            error=e,
+            handler_name="show_professor_schedule_menu",
+            additional_context=f"преподаватель: {professor_name}",
+        )
+
         await message.answer(
             text=f"👨‍🏫 *Преподаватель: {escape_md_v2(professor_name)}*\n\nВыберите тип расписания:",
             reply_markup=schedule_type_kb,
@@ -199,27 +207,35 @@ async def show_professor_selection_keyboard(message: Message, professors: list[P
         professors (list[Professor]): Список найденных преподавателей
         query (str): Исходный поисковый запрос
     """
-    keyboard = []
 
-    for professor in professors:
+    try:
+        keyboard = []
+
+        for professor in professors:
+            keyboard.append([
+                InlineKeyboardButton(
+                    text=f"👨‍🏫 {professor.name}",
+                    callback_data=f"select_prof:{professor.name}"
+                )
+            ])
+
         keyboard.append([
-            InlineKeyboardButton(
-                text=f"👨‍🏫 {professor.name}",
-                callback_data=f"select_prof:{professor.name}"
-            )
+            InlineKeyboardButton(text="◀️ Назад", callback_data="cancel")
         ])
 
-    keyboard.append([
-        InlineKeyboardButton(text="◀️ Назад", callback_data="cancel")
-    ])
+        selection_kb = InlineKeyboardMarkup(inline_keyboard=keyboard)
 
-    selection_kb = InlineKeyboardMarkup(inline_keyboard=keyboard)
+        await message.answer(
+            text=f"🔍 По запросу `{escape_md_v2(query)}` найдено несколько преподавателей\\.\n\n",
+            reply_markup=selection_kb,
+            parse_mode="MarkdownV2"
+        )
 
-    await message.answer(
-        text=f"🔍 По запросу `{escape_md_v2(query)}` найдено несколько преподавателей\\.\n\n",
-        reply_markup=selection_kb,
-        parse_mode="MarkdownV2"
-    )
+    except Exception as e:
+        log_error_with_context(
+            error=e,
+            handler_name="show_professor_selection_keyboard",
+        )
 
 
 @router.callback_query(F.data == "cancel")
@@ -241,12 +257,19 @@ async def cancel(callback: CallbackQuery, state: FSMContext):
         - Отправляет callback.answer() для подтверждения действия.
     """
 
-    await callback.message.edit_text(
-        text="Выберите расписание которое хотите посмотреть:",
-        reply_markup=get_other_schedules_kb()
-    )
-    await callback.answer()
-    await state.clear()
+    try:
+        await safe_edit_message(
+            callback,
+            text="Выберите расписание которое хотите посмотреть:",
+            reply_markup=get_other_schedules_kb()
+        )
+        await callback.answer()
+        await state.clear()
+    except Exception as e:
+        log_error_with_context(
+            error=e,
+            handler_name="cancel",
+        )
 
 
 @router.callback_query(F.data == "professor_schedule")
@@ -268,29 +291,44 @@ async def professor_schedule(callback: CallbackQuery, state: FSMContext):
         - Сохраняет ID текущего сообщения для последующего удаления.
     """
 
-    if is_sync_running():
-        await callback.message.edit_text(
-            "⏳ Просмотр расписания временно недоступен — идёт обновление данных. Пожалуйста, попробуйте позже."
+    try:
+        if is_sync_running():
+            await safe_edit_message(
+                callback,
+                text="⏳ Просмотр расписания временно недоступен — идёт обновление данных. Пожалуйста, попробуйте позже."
+            )
+            await callback.answer()
+            await state.clear()
+            return
+
+        cancel_kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="◀️ Назад", callback_data="cancel")]
+            ])
+
+        await safe_edit_message(
+            callback,
+            text="👨‍🏫 Введите фамилию и инициалы преподавателя:\n\n"
+                 "Например: `Иванов И И`",
+            reply_markup=cancel_kb,
+            parse_mode="MarkdownV2"
+        )
+
+        await callback.answer()
+        await state.set_state(ProfessorScheduleStates.waiting_name)
+        await state.update_data(message_id_to_delete=callback.message.message_id)
+
+    except Exception as e:
+        log_error_with_context(
+            error=e,
+            handler_name="professor_schedule",
+        )
+
+        await callback.message.answer(
+            text="Произошла ошибка при просмотре расписания преподавателя. Попробуйте позже.",
         )
         await callback.answer()
         await state.clear()
-        return
-
-    cancel_kb = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="◀️ Назад", callback_data="cancel")]
-        ])
-
-    await callback.message.edit_text(
-        text="👨‍🏫 Введите фамилию и инициалы преподавателя:\n\n"
-             "Например: `Иванов И И`",
-        reply_markup=cancel_kb,
-        parse_mode="MarkdownV2"
-    )
-
-    await callback.answer()
-    await state.set_state(ProfessorScheduleStates.waiting_name)
-    await state.update_data(message_id_to_delete=callback.message.message_id)
 
 
 @router.message(StateFilter(ProfessorScheduleStates.waiting_name))
@@ -332,32 +370,45 @@ async def waiting_name(message: Message, state: FSMContext):
 
     name = message.text.strip()
 
-    exact_professor, similar_professors = await search_professors_fuzzy(query=name, limit=5, score_cutoff=85.0)
+    try:
+        exact_professor, similar_professors = await search_professors_fuzzy(query=name, limit=5, score_cutoff=85.0)
 
-    if exact_professor:
-        await show_professor_schedule_menu(message, exact_professor.name, state)
-        return
+        if exact_professor:
+            await show_professor_schedule_menu(message, exact_professor.name, state)
+            return
 
-    if not similar_professors:
-        msg = await message.answer(
-            text=f"❌ Преподаватель `{escape_md_v2(name)}` не найден\\.\n\n"
-                 "Проверьте написание и попробуйте снова\\.",
-            reply_markup=cancel_kb,
-            parse_mode="MarkdownV2"
+        if not similar_professors:
+            msg = await message.answer(
+                text=f"❌ Преподаватель `{escape_md_v2(name)}` не найден\\.\n\n"
+                     "Проверьте написание и попробуйте снова\\.",
+                reply_markup=cancel_kb,
+                parse_mode="MarkdownV2"
+            )
+
+            await state.update_data(message_id_to_delete=msg.message_id)
+            await state.set_state(ProfessorScheduleStates.waiting_name)
+            return
+
+        if len(similar_professors) == 1:
+            best_match = similar_professors[0]
+            await show_professor_schedule_menu(message, best_match.name, state)
+            await state.clear()
+            return
+
+        await show_professor_selection_keyboard(message, similar_professors, name)
+    except Exception as e:
+        log_error_with_context(
+            error=e,
+            handler_name="waiting_name",
+            additional_context=f"запрос='{name}', состояние=waiting_name",
         )
 
-        await state.update_data(message_id_to_delete=msg.message_id)
-        await state.set_state(ProfessorScheduleStates.waiting_name)
-        return
-
-    if len(similar_professors) == 1:
-        best_match = similar_professors[0]
-        await show_professor_schedule_menu(message, best_match.name, state)
+        await message.answer(
+            text="Произошла ошибка при поиске преподавателя.",
+            reply_markup=cancel_kb
+        )
+    finally:
         await state.clear()
-        return
-
-    await show_professor_selection_keyboard(message, similar_professors, name)
-    await state.clear()
 
 
 @router.callback_query(F.data.startswith("select_prof:"))
@@ -393,36 +444,29 @@ async def handle_professor_today(callback: CallbackQuery):
         Exception: Если произошла ошибка при загрузке или форматировании расписания.
     """
     if is_sync_running():
-        await callback.message.edit_text(
-            "⏳ Просмотр расписания временно недоступен — идёт обновление данных. Пожалуйста, попробуйте позже."
+        await safe_edit_message(
+            callback,
+            text="⏳ Просмотр расписания временно недоступен — идёт обновление данных. Пожалуйста, попробуйте позже."
         )
         await callback.answer()
         return
-    
+
     professor_name = ""
     try:
         professor_name = callback.data.split(":")[1]
         professor, all_lessons, filtered_lessons, week_filter = await get_professor_schedule_for_today(professor_name)
 
         if not professor:
-            await callback.message.edit_text(f"❌ Преподаватель {professor_name} не найден.")
+            await safe_edit_message(callback, text=f"❌ Преподаватель {professor_name} не найден.")
             await callback.answer()
             return
 
         if not all_lessons:
-            await callback.message.edit_text(f"❌ Нет расписания для преподавателя {professor_name}.")
+            await safe_edit_message(callback, text=f"❌ Нет расписания для преподавателя {professor_name}.")
             await callback.answer()
             return
 
-        try:
-            await callback.message.delete()
-        except TelegramBadRequest as e:
-            if "message can't be deleted" in str(e):
-                logger.debug(f"⚠️ Не удалось удалить сообщение {callback.message.message_id}: слишком старое (старше 48 часов)")
-            else:
-                logger.debug(f"⚠️ Не удалось удалить сообщение {callback.message.message_id}: {e}")
-        except Exception as delete_error:
-            logger.debug(f"⚠️ Не удалось удалить сообщение {callback.message.message_id}: {delete_error}")
+        await safe_delete_callback_message(callback)
 
         schedule_type_kb = get_schedule_professors_kb(professor_name)
 
@@ -442,8 +486,12 @@ async def handle_professor_today(callback: CallbackQuery):
         )
 
     except Exception as e:
-        logger.error(f"Ошибка при показе расписания на сегодня преподавателя {professor_name}: {e}")
-        await callback.message.edit_text(f"❌ Ошибка при загрузке расписания преподавателя {professor_name}")
+        log_error_with_context(
+            error=e,
+            handler_name="handle_professor_today",
+            additional_context=f"callback_data={callback.data}",
+        )
+        await safe_edit_message(callback, text=f"Ошибка при загрузке расписания преподавателя {professor_name}")
         await callback.answer()
 
 
@@ -470,8 +518,9 @@ async def handle_professor_week(callback: CallbackQuery):
     """
 
     if is_sync_running():
-        await callback.message.edit_text(
-            "⏳ Просмотр расписания временно недоступен — идёт обновление данных. Пожалуйста, попробуйте позже."
+        await safe_edit_message(
+            callback,
+            text="⏳ Просмотр расписания временно недоступен — идёт обновление данных. Пожалуйста, попробуйте позже."
         )
         await callback.answer()
         return
@@ -485,12 +534,12 @@ async def handle_professor_week(callback: CallbackQuery):
         professor, lessons = await get_lesson_for_professor(professor_name)
 
         if not professor:
-            await callback.message.edit_text(f"❌ Преподаватель {professor} не найден.")
+            await safe_edit_message(callback, text=f"❌ Преподаватель {professor} не найден.")
             await callback.answer()
             return
 
         if not lessons:
-            await callback.message.edit_text(f"❌ Нет расписания для преподавателя {professor_name}")
+            await safe_edit_message(callback, text=f"❌ Нет расписания для преподавателя {professor_name}")
             await callback.answer()
             return
 
@@ -511,15 +560,7 @@ async def handle_professor_week(callback: CallbackQuery):
             header_prefix=header_prefix
         )
 
-        try:
-            await callback.message.delete()
-        except TelegramBadRequest as e:
-            if "message can't be deleted for everyone" in str(e):
-                logger.debug(f"⚠️ Не удалось удалить сообщение {callback.message.message_id}: слишком старое (старше 48 часов)")
-            else:
-                logger.debug(f"⚠️ Не удалось удалить сообщение {callback.message.message_id}: {e}")
-        except Exception as e:
-            logger.debug(f"⚠️ Не удалось удалить сообщение {callback.message.message_id}: {e}")
+        await safe_delete_callback_message(callback)
 
         if messages:
             len_messages = len(messages)
@@ -538,6 +579,10 @@ async def handle_professor_week(callback: CallbackQuery):
             await callback.answer()
 
     except Exception as e:
-        logger.error(f"Ошибка при показе расписания преподавателя {professor_name}: {e}.")
-        await callback.message.edit_text(f"❌ Ошибка при загрузке расписания преподавателя {professor_name}")
+        log_error_with_context(
+            error=e,
+            handler_name="handle_professor_today",
+            additional_context=f"callback_data={callback.data}, professor_name={professor_name}",
+        )
+        await safe_edit_message(callback, text=f"Ошибка при загрузке расписания преподавателя {professor_name}")
         await callback.answer()
