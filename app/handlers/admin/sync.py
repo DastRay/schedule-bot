@@ -23,7 +23,7 @@ from aiogram.types import (
 )
 from app.filters.is_admin import IsAdminFilter
 from app.keyboards.admin_kb import get_admin_kb
-from app.utils.messages.safe_delete_messages import safe_delete_message
+from app.utils.messages.safe_actions_with_messages import safe_delete_message
 from app.utils.schedule.worker import (
     run_full_sync_for_group,
     run_full_sync,
