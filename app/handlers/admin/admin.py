@@ -14,7 +14,7 @@ from app.state.states import AddAdminStates
 from app.database.db import AsyncSessionLocal
 from app.utils.admins.admin_list import add_admin_to_list, remove_admin_from_list, get_admin_username
 from app.utils.custom_logging.BufferedLogHandler import global_buffer_handler
-from app.utils.messages.safe_delete_messages import safe_delete_message, safe_delete_callback_message
+from app.utils.messages.safe_actions_with_messages import safe_delete_message, safe_delete_callback_message
 import app.utils.admins.admin_list as admin_list
 
 router = Router()

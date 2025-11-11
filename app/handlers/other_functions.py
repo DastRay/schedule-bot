@@ -11,7 +11,7 @@ from app.database.db import AsyncSessionLocal
 from app.database.models import User
 from app.keyboards.main_menu_kb import get_main_menu_kb
 from app.state.states import RegistrationStates
-from app.utils.messages.safe_delete_messages import safe_delete_message, safe_delete_callback_message
+from app.utils.messages.safe_actions_with_messages import safe_delete_message, safe_delete_callback_message
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -48,7 +48,6 @@ async def logout_user(callback: CallbackQuery):
         user_id = callback.from_user.id
 
         async with AsyncSessionLocal() as session:
-            # Проверяем, существует ли пользователь
             query = await session.execute(select(User).where(User.id == user_id))
             existing_user = query.scalars().first()
 
@@ -56,14 +55,11 @@ async def logout_user(callback: CallbackQuery):
                 await callback.answer(text="❌ Вы не зарегистрированы!", show_alert=True)
                 return
 
-            # Удаляем пользователя из базы данных
             await session.execute(delete(User).where(User.id == user_id))
             await session.commit()
 
-        # Получаем клавиатуру для незарегистрированного пользователя
         updated_keyboard = await get_main_menu_kb(user_id)
 
-        # Отправляем новое сообщение с обновленной клавиатурой
         await callback.message.answer(
             text="✅ Вы вышли из профиля.\n\n"
             "Теперь у вас доступен ограниченный функционал. "
@@ -74,7 +70,7 @@ async def logout_user(callback: CallbackQuery):
 
     except Exception as e:
         logger.error(f"Ошибка при выходе из профиля: {e}", exc_info=True)
-        await callback.answer(text="❌ Произошла ошибка при выходе из профиля", show_alert=True)
+        await callback.answer(text="❌ Произошла ошибка при выходе из профиля")
 
 
 @router.callback_query(F.data == "exit_other_functions")
