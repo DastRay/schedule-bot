@@ -4,8 +4,10 @@
 
 - Faculty: факультет
 - Group: учебная группа
-- Lesson: занятие
+- Lesson: пары студентов
 - Users: пользователь
+- Professor: преподаватели
+- ProfessorLesson: пары препподавателей
 """
 
 from sqlalchemy import (
