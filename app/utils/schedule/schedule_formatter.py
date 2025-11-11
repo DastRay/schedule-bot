@@ -204,7 +204,6 @@ def format_schedule_students(lessons, week: str, header_prefix: str = "📅 Ра
         current_time_str = None
         current_lessons = []
 
-        # Группируем пары по номеру и времени
         for lesson in day_lessons:
             marker, lesson_num, subject, room, time_str = _format_common_lesson_data(lesson)
             professors = ", ".join(lesson.professors) if isinstance(lesson.professors, list) else (
@@ -212,7 +211,6 @@ def format_schedule_students(lessons, week: str, header_prefix: str = "📅 Ра
             professors = escape_md_v2(professors)
 
             if lesson_num != current_lesson_num or time_str != current_time_str:
-                # Сохраняем предыдущую группу
                 if current_lessons:
                     lesson_block = f"*{current_lesson_num}\\. {current_time_str}*\n"
                     for i, lesson_data in enumerate(current_lessons):
@@ -224,18 +222,15 @@ def format_schedule_students(lessons, week: str, header_prefix: str = "📅 Ра
 
                     lesson_blocks.append(lesson_block)
 
-                # Начинаем новую группу
                 current_lesson_num = lesson_num
                 current_time_str = time_str
                 current_lessons = []
 
-            # Форматируем отдельную пару
             lesson_text = f"{marker} *{subject}*\n"
             lesson_text += f"       {professors}\n"
             lesson_text += f"       {room}"
             current_lessons.append(lesson_text)
 
-        # Добавляем последнюю группу
         if current_lessons:
             lesson_block = f"*{current_lesson_num}\\. {current_time_str}*\n"
             for i, lesson_data in enumerate(current_lessons):
@@ -280,17 +275,14 @@ def format_schedule_professor(lessons, week: str, header_prefix: str = "📅 Р�
         current_time_str = None
         current_lessons = []
 
-        # Группируем пары по номеру и времени
         for lesson in day_lessons:
             marker, lesson_num, subject, room, time_str = _format_common_lesson_data(lesson)
 
-            # Для онлайн-пар показываем "Онлайн"
             urls = url_pattern.findall(room)
             if urls:
                 room = "Онлайн"
 
             if lesson_num != current_lesson_num or time_str != current_time_str:
-                # Сохраняем предыдущую группу
                 if current_lessons:
                     lesson_block = f"*{current_lesson_num}\\. {current_time_str}*\n"
                     for i, lesson_data in enumerate(current_lessons):
@@ -302,17 +294,14 @@ def format_schedule_professor(lessons, week: str, header_prefix: str = "📅 Р�
 
                     lesson_blocks.append(lesson_block)
 
-                # Начинаем новую группу
                 current_lesson_num = lesson_num
                 current_time_str = time_str
                 current_lessons = []
 
-            # Форматируем отдельную пару
             lesson_text = f"{marker} *{subject}*\n"
             lesson_text += f"       {room}"
             current_lessons.append(lesson_text)
 
-        # Добавляем последнюю группу
         if current_lessons:
             lesson_block = f"*{current_lesson_num}\\. {current_time_str}*\n"
             for i, lesson_data in enumerate(current_lessons):
