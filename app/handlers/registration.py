@@ -12,7 +12,7 @@ from app.keyboards.main_menu_kb import get_main_menu_kb
 from app.state.states import RegistrationStates
 from sqlalchemy import select
 
-from app.utils.messages.safe_delete_messages import safe_delete_callback_message
+from app.utils.messages.safe_actions_with_messages import safe_delete_callback_message
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -28,13 +28,11 @@ async def cancel_registration(callback: CallbackQuery, state: FSMContext):
 @router.message(F.text == "Регистрация")
 async def start_registration(message: Message, state: FSMContext):
     """Начало процесса регистрации с проверкой существующей регистрации"""
-    # Проверяем, зарегистрирован ли пользователь
     async with AsyncSessionLocal() as session:
         query = await session.execute(select(User).where(User.id == message.from_user.id))
         existing_user = query.scalars().first()
 
     if existing_user:
-        # Пользователь уже зарегистрирован
         await message.answer(
             text="✅ Вы уже зарегистрированы!\n\n"
             "Вы можете использовать полный функционал бота.\n"
@@ -43,7 +41,6 @@ async def start_registration(message: Message, state: FSMContext):
         )
         return
 
-    # Если пользователь не зарегистрирован, начинаем процесс регистрации
     await message.answer(text="Выберите ваш факультет:", reply_markup=registration_kb.faculty_keyboard_reg)
     await state.set_state(RegistrationStates.choice_faculty)
 
@@ -77,7 +74,6 @@ async def registration_group(callback: CallbackQuery, state: FSMContext):
 
     try:
         async with AsyncSessionLocal() as session:
-            # Находим группу и факультет в базе
             query = await session.execute(select(Group).where(Group.group_name == group_name))
             group = query.scalars().first()
 
@@ -88,18 +84,15 @@ async def registration_group(callback: CallbackQuery, state: FSMContext):
                 await callback.message.edit_text("❌ Ошибка: группа или факультет не найдены.")
                 return
 
-            # Проверяем, есть ли уже пользователь
             query = await session.execute(select(User).where(User.id == callback.from_user.id))
             existing_user = query.scalars().first()
 
             if existing_user:
-                # Обновляем существующего пользователя
                 existing_user.group_id = group.id
                 existing_user.faculty_id = faculty.id
                 action_text = "Данные обновлены!"
                 success_message = f"✅ Данные обновлены!\nФакультет: {faculty_name}\nГруппа: {group_name}"
             else:
-                # Создаем нового пользователя
                 user = User(
                     id=callback.from_user.id,
                     group_id=group.id,
@@ -116,13 +109,10 @@ async def registration_group(callback: CallbackQuery, state: FSMContext):
 
             await session.commit()
 
-        # Получаем обновленную клавиатуру для зарегистрированного пользователя
         updated_keyboard = await get_main_menu_kb(callback.from_user.id)
 
-        # Отправляем сообщение с обновленной клавиатурой
         await callback.message.answer(success_message, reply_markup=updated_keyboard)
 
-        # Редактируем предыдущее сообщение, чтобы убрать инлайн-клавиатуру
         await callback.message.edit_text(f"✅ {action_text}")
         await callback.answer()
 
